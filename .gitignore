@@ -21,3 +21,5 @@
 /numbers.txt
 /wiki dumps only articles
 /wiki dumps processed into jsonls
+/embeddings
+/index.faiss

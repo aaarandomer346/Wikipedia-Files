@@ -3,7 +3,10 @@ import json
 import faiss
 import numpy as np
 import os, gc
+import torch
 
+
+torch.set_num_threads(4)
 
 
 import psutil, threading
@@ -11,14 +14,11 @@ import psutil, threading
 def monitor():
     while True:
         mem = psutil.virtual_memory()
-        cpu = psutil.cpu_percent(interval=1)
+        cpu = psutil.cpu_percent(interval=45)
         print(f"RAM: {mem.used/1e9:.1f}/{mem.total/1e9:.1f} GB | CPU: {cpu}%")
 
 t = threading.Thread(target=monitor, daemon=True)
 t.start()
-
-
-
 
 
 model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -28,7 +28,7 @@ index = faiss.IndexIVFPQ(quantizer, 384, 65536, 48, 8)
 all_training_files = []
 all_files = []
 
-base_dir = "/media/aaarandomer/Windows&Mac/Wikipedia Files/chunks/"
+base_dir = "/Volumes/Windows&Mac/Wikipedia Files/chunks/"
 
 for i in range(1, 7):
     all_training_files.append(f"{base_dir}output_{i}.jsonl")
@@ -51,18 +51,19 @@ for training_file in all_training_files:
             chunks.append(json.loads(line).get("chunk", "").strip())
             if len(chunks) == SUB_BATCH:
                 print("encoding subbatch")
-                embeddings = model.encode(chunks, batch_size=512, show_progress_bar=True).astype('float32')
+                embeddings = model.encode(chunks, batch_size=16, show_progress_bar=True).astype('float32')
                 count = len(embeddings)
                 train_matrix[idx:idx+count] = embeddings
                 idx += count
-                del embeddings, chunks
+                del embeddings
+                chunks = []
                 gc.collect()
                 print("done encoding subbatch")
     
     print("Done encoding")
 
 print("starting training")
-index.train(train_matrix[idx])
+index.train(train_matrix[:idx])
 del train_matrix
 os.remove("train_matrix.memmap")
 gc.collect()
