@@ -63,22 +63,14 @@ curr_file = 0
 print("actually work time now yay")
 
 for current_file in all_files:
-    with open(current_file, "r", encoding="utf-8") as infile:
-        curr_file += 1
-        embeddings = np.load(current_file)
+    curr_file += 1
+    embeddings = np.load(current_file)
 
-        ids = [int(f"1{str(curr_file).zfill(2)}")] * len(embeddings) # will output 1|xx
-        # you can now use this to figure which file by:
-            # take the index of wtv it returns and which file its in
-            # index % 500000 will give remainder, i.e. the line it is in
-            # then use the file number and the line it is at to find the chunk
+    start = (curr_file - 1) * 1000000
+    ids = np.arange(start, start + len(embeddings), dtype=np.int64)
 
-        index.add_with_ids(embeddings, np.array(ids, dtype=np.int64))
+    index.add_with_ids(embeddings, ids)
 
-        print(f"done with file: {curr_file}")
-
-    if curr_file % 5 == 0:
-        faiss.write_index(index, f"index_checkpoint_{curr_file}.faiss")
-
+    print(f"done with file: {curr_file}")
 
 faiss.write_index(index, "index.faiss")
