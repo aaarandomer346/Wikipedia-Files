@@ -23,3 +23,4 @@
 /wiki dumps processed into jsonls
 /embeddings
 /index.faiss
+/qdrant_wiki_db
