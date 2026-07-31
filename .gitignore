@@ -24,3 +24,4 @@
 /embeddings
 /index.faiss
 /qdrant_wiki_db
+/.vscode

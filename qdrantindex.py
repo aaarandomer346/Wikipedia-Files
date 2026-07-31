@@ -1,9 +1,10 @@
 import os
-import json
+import orjson
+import gc
 import numpy as np
 from itertools import islice
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, HnswConfigDiff, Batch, OptimizersConfigDiff
+from qdrant_client.models import Distance, VectorParams, HnswConfigDiff, Batch, OptimizersConfigDiff, PointStruct
 
 
 
@@ -13,9 +14,9 @@ import psutil, threading
 def monitor():
     count = 0
     while True:
-        count += 1
+        count += 0.25
         mem = psutil.virtual_memory()
-        cpu = psutil.cpu_percent(interval=60)
+        cpu = psutil.cpu_percent(interval=15)
         print(f"Minute: {count} |  RAM: {mem.used/1e9:.1f}/{mem.total/1e9:.1f} GB | CPU: {cpu}%")
 
 t = threading.Thread(target=monitor, daemon=True)
@@ -28,8 +29,12 @@ drive_db_path = "qdrant_wiki_db"
 client = QdrantClient(path=drive_db_path)
 collection_name = "wikipedia_files"
 
+if client.collection_exists(collection_name):
+    client.delete_collection(collection_name)
+
 client.create_collection(
     collection_name=collection_name,
+    on_disk_payload=True,
     vectors_config=VectorParams(
         size=384,
         distance=Distance.COSINE,
@@ -45,7 +50,7 @@ client.create_collection(
     )
 )
 
-BATCH_SIZE = 5000
+BATCH_SIZE = 25000
 id_count = 0
 
 for i in range(1, 43):
@@ -56,38 +61,31 @@ for i in range(1, 43):
 
     vectors = np.load(embedding_file, mmap_mode='r')
 
-    with open(text_file, "r", encoding='utf-8') as infile:
-        stard_idx = 0
 
-        while True:
-            batch = list(islice(infile, BATCH_SIZE))
-            if not batch:
-                break
-            curr_batch_size = len(batch)
-            end_idx = start_idx + curr_batch_size
+    def stream_points():
+        with open(text_file, 'r', encoding='utf-8') as infile:
+            for idx, line in enumerate(infile):
+                yield PointStruct(
+                    id = id_count+idx,
+                    vector=vectors[idx].tolist(),
+                    payload={"text": orjson.loads(line).get("chunk", "").strip()}
+                )
 
-            vector_batch = vectors[start_idx:end_idx].tolist()
+    client.upload_points(
+        collection_name=collection_name,
+        points=stream_points(),
+        batch_size=500,
+        parallel=1,
+        wait=True
+    )
 
-            payload = [
-                {"text": json.loads(line).get("chunk", "").strip()}
-                for line in batch
-            ]
+    points_in_file = vectors.shape[0]
+    id_count += points_in_file
 
-            ids = list(range(id_count, id_count + curr_batch_size))
-
-            client.upsert(
-                collection_name=collection_name,
-                points=Batch(
-                    ids=ids,
-                    vectors=vector_batch,
-                    payloads=payload
-                ),
-                wait=False
-            )
-
-            id_count += curr_batch_size
-            start_idx = end_idx
-        print(f"finished file: {id}, total saved: {id_count}")
+    del vectors
+    gc.collect()
+    
+    print(f"finished file: {i}, total saved: {id_count}")
 
 
 client.update_collection(
